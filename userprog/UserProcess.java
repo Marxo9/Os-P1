@@ -496,72 +496,10 @@ public class UserProcess {
 	Lib.assertNotReached("Machine.halt() did not halt machine!");
 	return 0;
     }
-<<<<<<< HEAD
 
 
     private int handleExec(int filenameaddr, int argc, int argAddress) {
 	
-=======
-    // START OF PART 3
-    
- 	private int handleExit(int stat){ // status
- 		coff.close();
- 		if (pprocess != null)
- 		{
- 			pprocess.mlock.acquire();
- 			pprocess.estats.put(pid, stat);
- 			pprocess.mlock.release();
- 			pprocess.cprocesses.remove(this);
- 		}
- 		unloadSections();
- 		if (pid == 0) {
- 			Kernel.kernel.terminate(); //root exiting
- 		} else {
- 			UThread.finish();
- 		}
- 		return stat;
- 	}
-
- 	private int handleJoin(int pid, int saddr){ //
- 		UserProcess cprocess = null;
-
- 		// process matching with its pid
- 		for (int i = 0; i < cprocesses.size(); i++) {
- 			if(pid == cprocesses.get(i).pid) {
- 				cprocess = cprocesses.get(i);
- 				break;
- 			}
- 		}
- 		
- 		// pid does not match child
- 		if(cprocess == null) {
- 			return -1;
- 		}
- 		
- 		cprocess.thread.join();
-		mlock.acquire();
-		Integer stat = estats.get(cprocess.pid);
- 		mlock.release();
- 		
- 		// remove the child
- 		cprocesses.remove(cprocess);
- 		cprocess.pprocess = null;
- 		
- 		byte[] cstat = new byte[4];
- 		Lib.bytesFromInt(cstat, 0, stat);
- 		int numWrittenBytes = writeVirtualMemory(saddr, cstat); // (statusAddress, childStatus)
- 		if (numWrittenBytes != 4){
- 			return 0; // child not exited
- 			}
- 		else
- 		{
- 			return 1; // child exited
- 			}	
- 		}
-
- 	private int handleExec(int filenameaddr, int argc, int argAddress){
- 		
->>>>>>> c77326a02af506d8990d7e48a078bd1d3981804a
 		String filename = readVirtualMemoryString(filenameaddr, 256);
 		if (filename == null || filenameaddr < 0) {    // Check string filename
 				return -1;
