@@ -417,21 +417,19 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
-        UserKernel.lock.acquire();
+		UserKernel.lock.acquire();
+		//deallocate physical pages
+		for (int i=0; i < numPages; i++) {
+			UserKernel.freePages.add(pageTable[i].ppn);
+		}
+		UserKernel.lock.release();
 
-        for(int i = 0 ; i < numPages; i++){
-            UserKernel.availablePages.add(pageTable[i].ppn);
-        }
-        
-        UserKernel.lock.release();
-
-        for(int i = 0; i < 16; i++){
-            if(files[i] != null){
-                files[i].close();
-            }
-        }
-        
-        coff.close();
+		for (int i=0; i < MAX_FD; i++) {
+			if (files[i] != null) {
+				files[i].close();
+			}
+		}	
+		coff.close();  
     }      
 
     /**
@@ -477,15 +475,6 @@ public class UserProcess {
 	return 0;
     }
  
-    /**
-     * Attempt to open the named disk file, creating it if it does not exist,
-     * and return a file descriptor that can be used to access the file.
-     *
-     * Note that creat() can only be used to create files on disk; creat() will
-     * never return a file descriptor referring to a stream.
-     *
-     * Returns the new file descriptor, or -1 if an error occurred.
-     */
     private int handleCreate(int a0) {
         String fileName = readVirtualMemoryString(a0, MAX_STRING_LEN);
         OpenFile file = UserKernel.fileSystem.open(fileName, true);
@@ -505,14 +494,6 @@ public class UserProcess {
         return -1;
     }
 
-    /**
-     * Attempt to open the named file and return a file descriptor.
-     *
-     * Note that open() can only be used to open files on disk; open() will never
-     * return a file descriptor referring to a stream.
-     *
-     * Returns the new file descriptor, or -1 if an error occurred.
-     */
     private int handleOpen(int a0) {
         String fileName = readVirtualMemoryString(a0, MAX_STRING_LEN);
         OpenFile file = UserKernel.fileSystem.open(fileName, false);
@@ -532,39 +513,19 @@ public class UserProcess {
         return -1;
     }
 
-    /**
-     * Attempt to read up to count bytes into buffer from the file or stream
-     * referred to by fileDescriptor.
-     *
-     * On success, the number of bytes read is returned. If the file descriptor
-     * refers to a file on disk, the file position is advanced by this number.
-     *
-     * It is not necessarily an error if this number is smaller than the number of
-     * bytes requested. If the file descriptor refers to a file on disk, this
-     * indicates that the end of the file has been reached. If the file descriptor
-     * refers to a stream, this indicates that the fewer bytes are actually
-     * available right now than were requested, but more bytes may become available
-     * in the future. Note that read() never waits for a stream to have more data;
-     * it always returns as much as possible immediately.
-     *
-     * On error, -1 is returned, and the new file position is undefined. This can
-     * happen if fileDescriptor is invalid, if part of the buffer is read-only or
-     * invalid, or if a network stream has been terminated by the remote host and
-     * no more data is available.
-     */
     private int handleRead(int fd, int address, int size) {
         // Check for invalid argument
-        if (fd < 0 || fd >= MAX_FD || files[fd] == null) {
+        if (fd < 0 || fd >= MAX_FD || files[fd] == null || size < 0) {
             return -1;
         }
 
         byte buffer[] = new byte[size];
 
         OpenFile currentFile = files[fd];
-        int bytesRead = currentFile.read(fileOffsets[fd], buffer, 0, size);
+        int bytesRead = currentFile.read(buffer, 0, size);
 
-        if (bytesRead >= 0) {
-            writeVirtualMemory(address, buffer);
+        if (bytesRead != -1) {
+            writeVirtualMemory(address, buffer, 0, bytesRead);
             fileOffsets[fd] += bytesRead;
             return bytesRead;
         }
@@ -572,26 +533,9 @@ public class UserProcess {
         return -1;
     }
 
-    /**
-     * Attempt to write up to count bytes from buffer to the file or stream
-     * referred to by fileDescriptor. write() can return before the bytes are
-     * actually flushed to the file or stream. A write to a stream can block,
-     * however, if kernel queues are temporarily full.
-     *
-     * On success, the number of bytes written is returned (zero indicates nothing
-     * was written), and the file position is advanced by this number. It IS an
-     * error if this number is smaller than the number of bytes requested. For
-     * disk files, this indicates that the disk is full. For streams, this
-     * indicates the stream was terminated by the remote host before all the data
-     * was transferred.
-     *
-     * On error, -1 is returned, and the new file position is undefined. This can
-     * happen if fileDescriptor is invalid, if part of the buffer is invalid, or
-     * if a network stream has already been terminated by the remote host.
-     */
     private int handleWrite(int fd, int address, int size) {
         // Check for invalid argument
-        if (fd < 0 || fd >= MAX_FD || files[fd] == null) {
+        if (fd < 0 || fd >= MAX_FD || files[fd] == null || size < 0) {
             return -1;
         }
 
@@ -600,32 +544,16 @@ public class UserProcess {
         OpenFile currentFile = files[fd];
         int bytesWritten = currentFile.write(fileOffsets[fd], buffer, 0, size);
 
-        if (bytesWritten >= 0) {
-            readVirtualMemory(address, buffer);
-            fileOffsets[fd] += bytesWritten;
+        readVirtualMemory(address, buffer);
+        fileOffsets[fd] += bytesWritten;
+
+        if (bytesWritten == size) {
             return bytesWritten;
         }
 
         return -1;
     }
 
-    /**
-     * Close a file descriptor, so that it no longer refers to any file or stream
-     * and may be reused.
-     *
-     * If the file descriptor refers to a file, all data written to it by write()
-     * will be flushed to disk before close() returns.
-     * If the file descriptor refers to a stream, all data written to it by write()
-     * will eventually be flushed (unless the stream is terminated remotely), but
-     * not necessarily before close() returns.
-     *
-     * The resources associated with the file descriptor are released. If the
-     * descriptor is the last reference to a disk file which has been removed using
-     * unlink, the file is deleted (this detail is handled by the file system
-     * implementation).
-     *
-     * Returns 0 on success, or -1 if an error occurred.
-     */
     private int handleClose(int fd) {
         // Check for invalid argument
         if (fd < 0 || fd >= MAX_FD || files[fd] == null) {
@@ -633,29 +561,11 @@ public class UserProcess {
         }
     
         files[fd].close();
-
-        boolean success = true;
-        if (removeFile[fd]) {
-            success = UserKernel.fileSystem.remove(fileNames[fd]);
-            removeFile[fd] = false;
-        }
-        fileNames[fd] = null;
-
-        return success ? 0 : -1;
+        files[fd] = null;
+        
+        return 0;
     }
 
-    /**
-     * Delete a file from the file system. If no processes have the file open, the
-     * file is deleted immediately and the space it was using is made available for
-     * reuse.
-     *
-     * If any processes still have the file open, the file will remain in existence
-     * until the last file descriptor referring to it is closed. However, creat()
-     * and open() will not be able to return new file descriptors for the file
-     * until it is deleted.
-     *
-     * Returns 0 on success, or -1 if an error occurred.
-     */
     private int handleUnlink(int a0) {
         String fileName = readVirtualMemoryString(a0, MAX_STRING_LEN);
 
@@ -667,15 +577,13 @@ public class UserProcess {
             }
         }
         boolean success = true;
-        if (fd != -1) {
+        if (fd == -1) {
             success = UserKernel.fileSystem.remove(fileName);
-        } else {
-            removeFile[fd] = true;
-        }
+        }  
         return success ? 0 : -1;
     }
 
-    private int handleExit(int stat){ // status
+    private int handleExit(int stat) { // status
 
         coff.close();
         if (parentProcess != null) {
@@ -693,7 +601,7 @@ public class UserProcess {
         return stat;
     }
 
-    private int handleJoin(int pid, int saddr){ //
+    private int handleJoin(int pid, int saddr) { //
         UserProcess cprocess = null;
 
         // process matching with its pid
@@ -713,9 +621,6 @@ public class UserProcess {
         mapLock.acquire();
         Integer stat = exitStatuses.get(cprocess.pid);
         mapLock.release();
-
-        // remove the child
-        childProcesses.remove(cprocess);
 
         byte[] cstat = new byte[4];
         Lib.bytesFromInt(cstat, 0, stat);
@@ -894,7 +799,7 @@ public class UserProcess {
     private static final int fdStandardInput = 0;
     private static final int fdStandardOutput = 1;
 
-    /// Index of the 4 arrays act as file descriptors
+    /// Index of the 3 arrays act as file descriptors
     // Array of files
     private static final int MAX_FD = 16;
     private static OpenFile files[] = new OpenFile[MAX_FD];
@@ -903,6 +808,4 @@ public class UserProcess {
     private static String fileNames[] = new String[MAX_FD];
     // Array of fileOffsets
     private static int fileOffsets[] = new int[MAX_FD];
-    // Array of removeFiles
-    private static boolean removeFile[] = new boolean[MAX_FD];
 }
