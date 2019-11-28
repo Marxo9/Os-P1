@@ -533,16 +533,8 @@ public class UserProcess {
 		} else{
 			return -1;
 		} 	
-<<<<<<< HEAD
     }
  
-=======
-}
-
-
- 	
- 	// END OF PART 3
->>>>>>> c77326a02af506d8990d7e48a078bd1d3981804a
     /**
      * Attempt to open the named disk file, creating it if it does not exist,
      * and return a file descriptor that can be used to access the file.
