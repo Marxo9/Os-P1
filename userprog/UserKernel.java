@@ -112,4 +112,8 @@ public class UserKernel extends ThreadedKernel {
 
     // dummy variables to make javac smarter
     private static Coff dummy1 = null;
+
+	public static LinkedList<Integer> availablePages;
+	
+	public static Lock lock;
 }

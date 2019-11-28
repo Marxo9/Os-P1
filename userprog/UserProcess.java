@@ -661,6 +661,12 @@ public class UserProcess {
         String fileName = readVirtualMemoryString(a0, MAX_STRING_LEN);
 
         int fd = -1;
+        for (int i = 0; i < MAX_FD; i++) {
+            if (fileNames[i] == fileName) {
+                fd = i;
+                break;
+            }
+        }
         boolean success = true;
         if (fd != -1) {
             success = UserKernel.fileSystem.remove(fileName);
@@ -673,11 +679,11 @@ public class UserProcess {
     private int handleExit(int stat){ // status
 
         coff.close();
-        if (pprocess != null) {
-            pprocess.mlock.acquire();
-            pprocess.estats.put(pid, stat);
-            pprocess.mlock.release();
-            pprocess.cprocesses.remove(this);
+        if (parentProcess != null) {
+            parentProcess.mapLock.acquire();
+            parentProcess.exitStatuses.put(pid, stat);
+            parentProcess.mapLock.release();
+            parentProcess.childProcesses.remove(this);
         }
         unloadSections();
         if (pid == 0) {
@@ -692,9 +698,9 @@ public class UserProcess {
         UserProcess cprocess = null;
 
         // process matching with its pid
-        for (int i = 0; i < cprocesses.size(); i++) {
-            if(pid == cprocesses.get(i).pid) {
-                cprocess = cprocesses.get(i);
+        for (int i = 0; i < childProcesses.size(); i++) {
+            if(pid == childProcesses.get(i).pid) {
+                cprocess = childProcesses.get(i);
                 break;
             }
         }
@@ -705,13 +711,12 @@ public class UserProcess {
         }
 
         cprocess.thread.join();
-        maplock.acquire();
-        Integer stat = estats.get(cprocess.pid);
-        maplock.release();
+        mapLock.acquire();
+        Integer stat = exitStatuses.get(cprocess.pid);
+        mapLock.release();
 
         // remove the child
         childProcesses.remove(cprocess);
-        childProcess.parentprocess = null;
 
         byte[] cstat = new byte[4];
         Lib.bytesFromInt(cstat, 0, stat);
@@ -805,11 +810,11 @@ public class UserProcess {
             case syscallHalt:
                 return handleHalt();
             case syscallExit:
-                //return handleExit(a0);
+                return handleExit(a0);
             case syscallExec:
                 return handleExec(a0, a1, a2);
             case syscallJoin:
-                //return handleJoin(a0, a1);
+                return handleJoin(a0, a1);
             case syscallCreate:
                 return handleCreate(a0);
             case syscallOpen:
