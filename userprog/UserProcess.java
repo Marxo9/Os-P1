@@ -7,7 +7,6 @@ import nachos.userprog.*;
 import java.io.EOFException;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.ListIterator;
 
 /**
  * Encapsulates the state of a user process that is not contained in its
@@ -418,13 +417,13 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
-//        UserKernel.lock.aquire();
-//
-//        for(int i = 0 ; i < numPages; i++){
-//            UserKernel.availablePages.add(pageTable[i].ppn);
-//        }
-//        
-//        UserKernel.lock.release();
+        UserKernel.lock.acquire();
+
+        for(int i = 0 ; i < numPages; i++){
+            UserKernel.availablePages.add(pageTable[i].ppn);
+        }
+        
+        UserKernel.lock.release();
 
         for(int i = 0; i < 16; i++){
             if(files[i] != null){
