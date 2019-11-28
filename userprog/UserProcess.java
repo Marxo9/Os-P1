@@ -5,13 +5,9 @@ import nachos.threads.*;
 import nachos.userprog.*;
 
 import java.io.EOFException;
-<<<<<<< HEAD
-import java.util.LinkedList;
-=======
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.ListIterator;
->>>>>>> c77326a02af506d8990d7e48a078bd1d3981804a
 
 /**
  * Encapsulates the state of a user process that is not contained in its
@@ -41,16 +37,11 @@ public class UserProcess {
     
         fileNames[fdStandardOutput] = "stdout";
         files[fdStandardOutput] = UserKernel.console.openForWriting();    
-<<<<<<< HEAD
-
+        
         childProcesses = new LinkedList<UserProcess>();
-        parentProcess = null;	
-=======
-        cprocesses = new LinkedList<UserProcess>(); // childProcesses
-		pprocess = null; // parentProcesses
-		estats = new HashMap<Integer,Integer>(); // exitStatuses
-		mlock = new Lock(); //mapLock
->>>>>>> c77326a02af506d8990d7e48a078bd1d3981804a
+		parentProcess = null; // parentProcesses
+		exitStatuses = new HashMap<Integer,Integer>();
+		mapLock = new Lock();
     }
     
     /**
@@ -427,7 +418,6 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
-<<<<<<< HEAD
 //        UserKernel.lock.aquire();
 //
 //        for(int i = 0 ; i < numPages; i++){
@@ -435,15 +425,6 @@ public class UserProcess {
 //        }
 //        
 //        UserKernel.lock.release();
-=======
-        UserKernel.lock.aquire();
-
-        for(int i = 0 ; i < numPages; i++){
-            UserKernel.availablePages.add(pageTable[i].ppn);
-        }
-        
-        UserKernel.lock.release();
->>>>>>> c77326a02af506d8990d7e48a078bd1d3981804a
 
         for(int i = 0; i < 16; i++){
             if(files[i] != null){
@@ -495,44 +476,6 @@ public class UserProcess {
 	
 	Lib.assertNotReached("Machine.halt() did not halt machine!");
 	return 0;
-    }
-
-
-    private int handleExec(int filenameaddr, int argc, int argAddress) {
-	
-		String filename = readVirtualMemoryString(filenameaddr, 256);
-		if (filename == null || filenameaddr < 0) {    // Check string filename
-				return -1;
-		}
-
-		// Check arguments
-		if (argc < 0){
-				return -1;
-		}
-		String[] argument = new String[argc];
-		for (int i=0; i < argc; i++ ) {
-			byte[] argsAddress = new byte[4];
-			int byteRead = readVirtualMemory(argAddress + (i*4), argsAddress);
-			if (byteRead != 4){    	// check argsAddress
-					return -1;
-			}
-			int argvaddr = Lib.bytesToInt(argsAddress, 0);
-			
-			String argum = readVirtualMemoryString(argvaddr, 256);
-			if (argum == null){    // check argum
-					return -1;
-			}
-			argument[i] = argum;
-		}
-
-		UserProcess cprocess = UserProcess.newUserProcess();
-		if (cprocess.execute(filename, argument)){
-			cprocess.pprocess = this; // parent process
-			this.cprocesses.add(cprocess);
-			return cprocess.pid;
-		} else{
-			return -1;
-		} 	
     }
  
     /**
@@ -727,6 +670,96 @@ public class UserProcess {
         return success ? 0 : -1;
     }
 
+    private int handleExit(int stat){ // status
+
+        coff.close();
+        if (pprocess != null) {
+            pprocess.mlock.acquire();
+            pprocess.estats.put(pid, stat);
+            pprocess.mlock.release();
+            pprocess.cprocesses.remove(this);
+        }
+        unloadSections();
+        if (pid == 0) {
+            Kernel.kernel.terminate(); //root exiting
+        } else {
+            UThread.finish();
+        }
+        return stat;
+    }
+
+    private int handleJoin(int pid, int saddr){ //
+        UserProcess cprocess = null;
+
+        // process matching with its pid
+        for (int i = 0; i < cprocesses.size(); i++) {
+            if(pid == cprocesses.get(i).pid) {
+                cprocess = cprocesses.get(i);
+                break;
+            }
+        }
+
+        // pid does not match child
+        if(cprocess == null) {
+            return -1;
+        }
+
+        cprocess.thread.join();
+        maplock.acquire();
+        Integer stat = estats.get(cprocess.pid);
+        maplock.release();
+
+        // remove the child
+        childProcesses.remove(cprocess);
+        childProcess.parentprocess = null;
+
+        byte[] cstat = new byte[4];
+        Lib.bytesFromInt(cstat, 0, stat);
+        int numWrittenBytes = writeVirtualMemory(saddr, cstat); // (statusAddress, childStatus)
+        if (numWrittenBytes != 4) {
+            return 0; // child not exited
+        } else {
+            return 1; // child exited
+        }	
+    }
+
+    private int handleExec(int filenameaddr, int argc, int argAddress) {
+	
+		String filename = readVirtualMemoryString(filenameaddr, 256);
+		if (filename == null || filenameaddr < 0) {    // Check string filename
+				return -1;
+		}
+
+		// Check arguments
+		if (argc < 0){
+				return -1;
+		}
+		String[] argument = new String[argc];
+		for (int i=0; i < argc; i++ ) {
+			byte[] argsAddress = new byte[4];
+			int byteRead = readVirtualMemory(argAddress + (i*4), argsAddress);
+			if (byteRead != 4){    	// check argsAddress
+					return -1;
+			}
+			int argvaddr = Lib.bytesToInt(argsAddress, 0);
+			
+			String argum = readVirtualMemoryString(argvaddr, 256);
+			if (argum == null){    // check argum
+					return -1;
+			}
+			argument[i] = argum;
+		}
+
+		UserProcess cprocess = UserProcess.newUserProcess();
+		if (cprocess.execute(filename, argument)){
+			cprocess.parentProcess = this; // parent process
+			this.childProcesses.add(cprocess);
+			return cprocess.pid;
+		} else{
+			return -1;
+		} 	
+    }
+
     private static final int
     syscallHalt = 0,
 	syscallExit = 1,
@@ -830,11 +863,6 @@ public class UserProcess {
 
     /** The program being run by this process. */
     protected Coff coff;
-    
-	private LinkedList<UserProcess> childProcesses;
-    private UserProcess parentProcess;
-
-	private int pid; //ProcessID
 
     /** This process's page table. */
     protected TranslationEntry[] pageTable;
@@ -849,6 +877,14 @@ public class UserProcess {
 	
     private static final int pageSize = Processor.pageSize;
     private static final char dbgProcess = 'a';
+
+    //Part 3
+	private LinkedList<UserProcess> childProcesses;
+    private UserProcess parentProcess;
+    HashMap<Integer, Integer> exitStatuses ;
+    Lock mapLock;
+    private int pid;
+    private UThread thread;
 
     // File descriptors of stdin and stdout
     private static final int fdStandardInput = 0;
